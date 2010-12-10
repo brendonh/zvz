@@ -4,6 +4,7 @@ NODE_NAME = zvz_dev@dev.brendonh.org
 SRC_DIR = src
 EBIN_DIR = ebin
 INCLUDE_DIR = include
+TEST_DIR = test
 
 LIB_DIR = /home/brendonh/lib
 
@@ -11,17 +12,20 @@ MOCHI_BASE = $(LIB_DIR)/mochiweb
 AMF_BASE = $(LIB_DIR)/erlang-amf
 SQLITE_BASE = $(LIB_DIR)/sqlite-erlang
 
-SOURCES  = $(wildcard $(SRC_DIR)/*.erl)
+SOURCES  = $(wildcard $(SRC_DIR)/*.erl) 
+TEST_SOURCES = $(wildcard $(TEST_DIR)/*.erl)
 INCLUDES = $(wildcard $(INCLUDE_DIR)/*.hrl)
 PARSERS = $(wildcart $(PRIV_DIR)/*.yrl)
 
-TARGETS  = $(patsubst $(SRC_DIR)/%.erl, $(EBIN_DIR)/%.beam,$(SOURCES))
+TARGETS  = $(patsubst $(SRC_DIR)/%.erl, $(EBIN_DIR)/%.beam,$(SOURCES)) $(patsubst $(TEST_DIR)/%.erl, $(EBIN_DIR)/%.beam, $(TEST_SOURCES))
+
+TEST_MODULES =  $(patsubst $(TEST_DIR)/%.erl, %, $(TEST_SOURCES))
 
 ERLC_INCLUDES = -I $(INCLUDE_DIR) -I $(PG_BASE)/include -I $(AMF_BASE)/include
 ERL_EBINS = -pa $(EBIN_DIR) -pa $(SQLITE_BASE)/ebin -pa $(AMF_BASE)/ebin -pa $(MOCHI_BASE)/ebin
 
 ERLC = erlc
-ERLC_OPTS = $(ERLC_INCLUDES) -o $(EBIN_DIR) -Wall +debug_info
+ERLC_OPTS = $(ERLC_INCLUDES) -o $(EBIN_DIR) -Wall +debug_info +export_all
 
 ERL_CMD=PATH=$(SQLITE_BASE)/priv:$$PATH erl \
     -name $(NODE_NAME) \
@@ -41,7 +45,7 @@ daemon: run_prereqs
 	$(ERL_CMD) -detached -s zvz_app launch
 
 test: run_prereqs
-	$(ERL_CMD) -noshell -s zvz_avatars test -s init stop
+	$(ERL_CMD) -noshell -s zvz_app test $(TEST_MODULES) -s init stop
 
 stop:
 	erl_call -a '$(PKG_NAME)_app stop_and_halt []' -sname $(PKG_NAME)
@@ -57,9 +61,9 @@ cleanlog:
 $(EBIN_DIR)/%.beam: $(SRC_DIR)/%.erl $(INCLUDES)
 	$(ERLC) $(ERLC_OPTS) $<
 
-cbin/babylon.so: force_look
-	@echo Checking csrc
-	cd csrc; $(MAKE) $(MFLAGS)
+$(EBIN_DIR)/%.beam: $(TEST_DIR)/%.erl $(INCLUDES)
+	$(ERLC) $(ERLC_OPTS) $<
+
 
 force_look :
 	@true

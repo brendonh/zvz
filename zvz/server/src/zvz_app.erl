@@ -11,7 +11,7 @@
 -behaviour(application).
 
 %% API
--export([launch/0]).
+-export([launch/0, test/1]).
 
 %% Application callbacks
 -export([start/2, stop/1]).
@@ -24,6 +24,8 @@
 launch() ->
     application:start(zvz).
 
+test(Modules) ->
+    eunit:test({inorder, Modules}, [verbose]).
 
 %%====================================================================
 %% Application callbacks

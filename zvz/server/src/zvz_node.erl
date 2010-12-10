@@ -15,17 +15,14 @@
 -include("zvz.hrl").
 -include("zvz_util.hrl").
 
+-include_lib("eunit/include/eunit.hrl").
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 %% internal callbacks
 -export([broadcast/2, cast_player/3]).
-
--record(state, {
-  uuid,
-  players
-}).
 
 -define(MIMETYPE, "application/x-amf").
 
@@ -42,67 +39,127 @@ start_link(UUID) ->
 %%====================================================================
 
 init([UUID]) ->
-    {ok, #state{
+    {ok, Units} = application:get_env(zvz, units),
+    {ok, #gameState{
        uuid = binary_to_list(UUID),
-       players = gb_trees:empty()
+       players = {none, none},
+       units = Units,
+       map = generate_map(?ROWS, ?COLUMNS)
       }}.
 
 
-handle_call({register, PlayerID}, {Pid, _}, State) ->
-    ?DBG({registering, PlayerID, Pid}),
-    NewPlayers = case gb_trees:lookup(PlayerID, State#state.players) of
-                     {value, OldPids} ->
-                         %gen_server:cast(OldPid, ghosted),
-                         gb_trees:update(PlayerID, [Pid|OldPids], State#state.players);
-                     none ->
-                         gb_trees:insert(PlayerID, [Pid], State#state.players)
-                 end,
-    NewState = State#state{players=NewPlayers},
-    {reply, ok, NewState};
+handle_call({register, PlayerID}, {Pid, _}, GameState) ->
+    {ok, Gold} = application:get_env(zvz, initial_gold),
+    NewPlayer = #player{uuid=PlayerID, pid=Pid, gold=Gold},
 
-handle_call(Request, _From, State) ->
+    {Players, Reply} = case GameState#gameState.players of
+                           {Other, #player{uuid=PlayerID}=Old} ->
+                               {{Other, Old#player{pid=Pid}}, ok};
+                           {#player{uuid=PlayerID}=Old, Other} ->
+                               {{Old#player{pid=Pid}, Other}, ok};
+                           {none, Other} ->
+                               {{NewPlayer#player{side=left}, Other}, ok};
+                           {Other, none} ->
+                               {{Other, NewPlayer#player{side=right}}, ok};
+                           Full ->
+                               {Full, {error, no_free_side}}
+                       end,
+    {reply, Reply, GameState#gameState{players=Players}};
+
+
+%% For unit testing and debugging
+handle_call(get_state, _From, GameState) ->
+    {reply, GameState, GameState};
+
+handle_call(Request, _From, GameState) ->
     ?DBG({unknown_call, Request}),
     Reply = ok,
-    {reply, Reply, State}.
+    {reply, Reply, GameState}.
 
 
 
-handle_cast(Msg, State) ->
+handle_cast(Msg, GameState) ->
     ?DBG({unknown_cast, Msg}),
-    {noreply, State}.
+    {noreply, GameState}.
 
 
-handle_info(Info, State) ->
+handle_info(Info, GameState) ->
     ?DBG({unknown_info, Info}),
-    {noreply, State}.
+    {noreply, GameState}.
 
 
-terminate(Reason, _State) ->
+terminate(Reason, _GameState) ->
     ?DBG({terminating, Reason}),
     ok.
 
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, GameState, _Extra) ->
+    {ok, GameState}.
 
 
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+generate_map(Rows, Cols) ->
+    array:fix(array:from_list(
+      [array:fix(array:from_list(
+        [#tile{row=Row, col=Col}
+         || Col <- lists:seq(0, Cols-1)]))
+       || Row <- lists:seq(0, Rows-1)]
+    )).
+
+get_tile(Map, Row, Col) ->
+    array:get(Col, array:get(Row, Map)).
+
+set_tile_left(Map, Row, Col, Units) -> set_tile(Map, Row, Col, #tile.left, Units).
+set_tile_right(Map, Row, Col, Units) -> set_tile(Map, Row, Col, #tile.right, Units).
+    
+set_tile(Map, Row, Col, Element, Units) ->
+    OldRow = array:get(Row, Map),
+    OldTile = array:get(Col, OldRow),
+    NewTile = setelement(Element, OldTile, Units),
+    NewRow = array:set(Col, NewTile, OldRow),
+    array:set(Row, NewRow, Map).
+
+%%--------------------------------------------------------------------
+%%% Unit placing
+%%--------------------------------------------------------------------
+
+place_unit(_Map, _Player, _Unit, Row) when Row < 0 orelse Row >= ?ROWS ->
+    {error, invalid_row};
+
+place_unit(_Map, #player{gold=Gold},  #unitType{cost=Cost}, _Row) when Gold < Cost ->
+    {error, insufficient_gold};
+
+place_unit(Map, Player, Unit, Row) ->
+    {Col, UnitsPos} = case Player#player.side of
+                          left -> {0, #tile.left};
+                          right -> {?COLUMNS-1, #tile.right}
+                      end,
+
+    Tile = get_tile(Map, Row, Col),
+    Units = element(UnitsPos, Tile),
+
+    case length(Units) of
+        X when X >= ?UNITS_PER_TILE ->
+            {error, tile_full};
+        _ -> 
+            {ok, set_tile(Map, Row, Col, UnitsPos, [Unit|Units])}            
+    end.
 
 
 %%--------------------------------------------------------------------
 %%% Dispatch
 %%--------------------------------------------------------------------
 
-broadcast(Message, State) ->
+broadcast(Message, GameState) ->
     [[gen_server:cast(Pid, Message) || Pid <- Pids]
-     || Pids <- gb_trees:values(State#state.players)].
+     || Pids <- gb_trees:values(GameState#gameState.players)].
 
 
-cast_player(PlayerID, Message, State) ->
-    case gb_trees:lookup(PlayerID, State#state.players) of
+cast_player(PlayerID, Message, GameState) ->
+    case gb_trees:lookup(PlayerID, GameState#gameState.players) of
         {value, Pids} ->
             [gen_server:cast(Pid, Message) || Pid <- Pids];
         _ -> ok
