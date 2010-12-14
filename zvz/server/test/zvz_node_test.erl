@@ -104,3 +104,25 @@ unit_placing_test() ->
     
     ?assertMatch({error, tile_full},
                  zvz_node:place_unit(NewMap2, Player2, grunt, 3)).
+
+
+turn_movement_test() ->
+    Tile = fun(C, L, R) -> 
+                   #tile{col=C, 
+                         left=[#unit{name=LN, move=LM, owner=left} || {LN, LM} <- L],
+                         right=[#unit{name=RN, move=RM, owner=right} || {RN, RM} <- R]}
+           end,
+
+    Row = [Tile(0, [], []),
+           Tile(1, [{one, 2}, {three, 0}], []), 
+           Tile(2, [], []), 
+           Tile(3, [], []), 
+           Tile(4, [], []), 
+           Tile(5, [], [{two, 1}, {four, 3}])],
+     
+    NewRow = zvz_node:turn_movement(array:from_list(Row), 0),
+
+    ?debugVal(array:to_list(NewRow)).
+
+
+    

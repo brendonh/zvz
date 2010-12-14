@@ -98,7 +98,7 @@ code_change(_OldVsn, GameState, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%%% Internal functions
+%%% Map manipulation
 %%--------------------------------------------------------------------
 
 generate_map(Rows, Cols) ->
@@ -148,6 +148,107 @@ place_unit(Map, Player, Unit, Row) ->
             {ok, set_tile(Map, Row, Col, UnitsPos, [Unit|Units])}            
     end.
 
+
+%%--------------------------------------------------------------------
+%%% Turns -- Movement
+%%--------------------------------------------------------------------
+    
+turn_movement(Row, RowNum) ->
+    RowList = array:to_list(Row),
+    {LeftUnits, RightUnits} = get_units(RowList, [], []),
+
+    Boundary = case find_existing_boundary(RowList) of
+                   none ->
+                       find_new_boundary(LeftUnits, RightUnits);
+                   Col -> Col
+               end,
+    
+    NewLeft = [move_unit(C, U, Boundary, 1) || {C, U} <- LeftUnits],
+    NewRight = [move_unit(C, U, Boundary, -1) || {C, U} <- RightUnits],
+    
+    Units = lists:sort(NewLeft ++ NewRight),
+
+    array:from_list(rebuild_row(Units, RowNum)).
+
+
+get_units([], Left, Right) ->
+    {lists:flatten(Left), lists:flatten(Right)};
+get_units([#tile{left=L, right=R, col=C}|Rest], Left, Right) ->
+    get_units(Rest, 
+              [[{C,U} || U <- L]|Left], 
+              [[{C,U} || U <- R]|Right]).
+
+
+find_existing_boundary([]) ->
+    none;
+find_existing_boundary([#tile{left=[]}|Rest]) ->
+    find_existing_boundary(Rest);
+find_existing_boundary([#tile{right=[]}|Rest]) ->
+    find_existing_boundary(Rest);
+find_existing_boundary([#tile{col=Col}|_]) ->
+    Col.
+
+
+find_new_boundary(Left, Right) ->
+    Collisions = lists:flatten(
+                   [collide(L, R) || L <- Left,
+                                     R <- Right]),
+
+    case lists:sort([C || C <- Collisions, C /= none]) of
+        [] -> none;
+        [{Delta, Col}|_Rest] -> Col
+    end.
+
+
+collide({LeftCol, #unit{move=LeftMove}}, {RightCol, #unit{move=RightMove}}) 
+  when LeftMove /= 0 orelse RightMove /= 0 ->
+    case (RightCol - LeftCol) / (LeftMove + RightMove) of
+        D when D > 1 -> none;
+        Delta -> 
+            {Delta, round_collide(LeftCol + (Delta * LeftMove))}
+    end;
+collide(_, _) -> none.
+
+
+round_collide(Col) when (Col - trunc(Col)) == 0.5 -> 
+    FlipFlop = random:uniform(2) - 1,
+    trunc(Col) + FlipFlop;
+round_collide(Other) -> round(Other).
+
+
+move_unit(Col, #unit{move=Move}=Unit, Boundary, Direction) ->
+    NewCol = Col + (Move * Direction),
+    case Boundary of
+        none -> {NewCol, Unit};
+        _ -> 
+            case (NewCol - Boundary) * Direction of
+                X when X > 0 -> {Boundary, Unit};
+                _ -> {NewCol, Unit}
+            end
+    end.
+
+
+rebuild_row(Units, RowNum) ->
+    rebuild_row(Units, [#tile{row=RowNum, col=0}], RowNum, 0).
+
+
+rebuild_row(Units, Row, RowNum, Col) when Col == ?COLUMNS - 1 ->
+    lists:reverse(Row);
+
+rebuild_row([{Col, #unit{owner=Owner}=Unit}|Rest], 
+            [#tile{col=Col}=Tile|Row], 
+            RowNum, Col) ->
+    UnitPos = case Owner of left -> #tile.left; right -> #tile.right end,
+    Units = element(UnitPos, Tile),
+    rebuild_row(Rest, [setelement(UnitPos, Tile, [Unit|Units])|Row], RowNum, Col);
+
+rebuild_row(Units, Row, RowNum, Col) ->
+    %?debugVal({Col, Row, hd(Units)}),
+    Tile = #tile{row=RowNum, col=Col+1},
+    rebuild_row(Units, [Tile|Row], RowNum, Col+1).
+    
+
+                     
 
 %%--------------------------------------------------------------------
 %%% Dispatch
