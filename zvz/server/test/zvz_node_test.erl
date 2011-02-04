@@ -106,23 +106,80 @@ unit_placing_test() ->
                  zvz_node:place_unit(NewMap2, Player2, grunt, 3)).
 
 
-turn_movement_test() ->
-    Tile = fun(C, L, R) -> 
-                   #tile{col=C, 
-                         left=[#unit{name=LN, move=LM, owner=left} || {LN, LM} <- L],
-                         right=[#unit{name=RN, move=RM, owner=right} || {RN, RM} <- R]}
-           end,
 
-    Row = [Tile(0, [], []),
-           Tile(1, [{one, 2}, {three, 0}], []), 
-           Tile(2, [], []), 
-           Tile(3, [], []), 
-           Tile(4, [], []), 
-           Tile(5, [], [{two, 1}, {four, 3}])],
-     
-    NewRow = zvz_node:turn_movement(array:from_list(Row), 0),
+mt(C, L, R) -> 
+    #tile{row=0, col=C, 
+          left=[#unit{name=LN, move=LM, owner=left} || {LN, LM} <- L],
+          right=[#unit{name=RN, move=RM, owner=right} || {RN, RM} <- R]}.
 
-    ?debugVal(array:to_list(NewRow)).
+
+test_turn_movement(From, To) ->
+    test_turn_movement(From, To, false).
+
+test_turn_movement(From, To, Print) ->
+
+    NewRow = zvz_node:turn_movement(array:from_list(From), 0),
+
+    Result = lists:sublist(array:to_list(NewRow), 1, length(To)),
+
+    case Print of
+      true -> ?debugVal(Result);
+      _ -> ok
+    end,
+
+    ?assertMatch(Result, To).
+
+
+turn_movement_empty_test() ->
+    test_turn_movement([], []).
+
+
+turn_movement_still_test() ->
+    test_turn_movement(
+      [mt(0, [{still, 0}], [])],
+      [mt(0, [{still, 0}], [])]).
+
+
+turn_movement_left_move_test() ->
+      test_turn_movement(
+      [mt(0, [{left, 1}], [])],
+      [mt(0, [], []),
+       mt(1, [{left, 1}], [])]).
+
+
+turn_movement_right_move_test() ->
+      test_turn_movement(
+       [mt(0, [], []), mt(1, [], [{right, 1}])],
+       [mt(0, [], [{right, 1}]), mt(1, [], [])]).
+
+
+turn_movement_right_end_test() ->
+      test_turn_movement(
+       [mt(0, [], []), mt(1, [], [{right, 5}])],
+       [mt(0, [], [{right, 5}]), mt(1, [], [])]).
+
+turn_movement_left_end_test() ->
+      test_turn_movement(
+       [mt(X, [], []) || X <- lists:seq(0, 12)] ++ [mt(13, [{left, 5}], [])],
+       [mt(X, [], []) || X <- lists:seq(0, 13)] ++ [mt(14, [{left, 5}], [])]).
+
+turn_movement_multi_test() ->
+
+    From = [mt(0, [], []),
+            mt(1, [{one, 2}, {three, 0}], []), 
+            mt(2, [], []), 
+            mt(3, [], []), 
+            mt(4, [], []), 
+            mt(5, [], [{two, 1}, {four, 3}])],
+ 
+    To = [mt(0, [], []),
+          mt(1, [{three, 0}], []),
+          mt(2, [], []),
+          mt(3, [{one, 2}], [{four, 3}]),
+          mt(4, [], [{two, 1}]),
+          mt(5, [], [])],
+
+    test_turn_movement(From, To).
 
 
     

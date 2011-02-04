@@ -217,7 +217,7 @@ round_collide(Other) -> round(Other).
 
 
 move_unit(Col, #unit{move=Move}=Unit, Boundary, Direction) ->
-    NewCol = Col + (Move * Direction),
+    NewCol = erlang:min(?COLUMNS - 1, erlang:max(0, Col + (Move * Direction))),
     case Boundary of
         none -> {NewCol, Unit};
         _ -> 
@@ -232,7 +232,7 @@ rebuild_row(Units, RowNum) ->
     rebuild_row(Units, [#tile{row=RowNum, col=0}], RowNum, 0).
 
 
-rebuild_row(Units, Row, RowNum, Col) when Col == ?COLUMNS - 1 ->
+rebuild_row(Units, Row, RowNum, Col) when Col == ?COLUMNS ->
     lists:reverse(Row);
 
 rebuild_row([{Col, #unit{owner=Owner}=Unit}|Rest], 
